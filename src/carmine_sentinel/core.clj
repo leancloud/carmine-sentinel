@@ -448,9 +448,13 @@
           @sentinel-groups))
 
 (comment
+  (ns carmine-sentinel.core
+    (:require [taoensso.carmine :as car]
+              [taoensso.carmine.commands :as cmds])
+    (:import (java.io EOFException)))
   (set-sentinel-groups!
    {:group1
-    {:specs [{:host "127.0.0.1" :port 5000} {:host "127.0.0.1" :port 5001} {:host "127.0.0.1" :port 5002}]}})
+    {:specs [{:host "127.0.0.1" :port 26379} {:host "127.0.0.1" :port 5000} {:host "127.0.0.1" :port 5001} {:host "127.0.0.1" :port 5002}]}})
   (let [server1-conn {:pool {} :spec {} :sentinel-group :group1 :master-name "mymaster"}]
     (println
      (wcar server1-conn
