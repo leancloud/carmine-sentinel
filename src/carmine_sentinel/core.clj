@@ -251,8 +251,10 @@
   (doseq [[group-id resolved-specs] @sentinel-resolved-specs]
     (doseq [[master-name master-specs] resolved-specs]
       (try
-        (when-not (master-role? (:master master-specs))
-          (swap! sentinel-resolved-specs dissoc-in [group-id master-name]))
+        (let [master (:master master-specs)]
+          (when (not= :error master)
+            (when (master-role? master)
+              (swap! sentinel-resolved-specs dissoc-in [group-id master-name]))))
         (catch EOFException _
           (swap! sentinel-resolved-specs dissoc-in [group-id master-name]))))))
 
