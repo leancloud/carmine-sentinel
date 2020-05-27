@@ -1,4 +1,4 @@
-(defproject leancloud/carmine-sentinel "0.1.2"
+(defproject leancloud/carmine-sentinel "0.1.3-SNAPSHOT"
   :description "A Clojure library designed to connect redis by sentinel, make carmine to support sentinel."
   :url "https://github.com/killme2008/carmine-sentinel"
   :license {:name "Eclipse Public License"
