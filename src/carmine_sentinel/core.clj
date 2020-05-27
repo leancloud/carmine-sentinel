@@ -139,6 +139,8 @@
   [raw-states]
   (->> raw-states
        (map (partial apply hash-map))
+       ;; 这里取到 sentinel 列表后，构造出来的只有 host 和 port，缺少 password
+       ;; 所以如果 sentinel 只配置了 A B 两个 Sentinel 且分别提供了密码，但实际有 A B C 三个 sentinel，那连接 C 的时候因为不会带着 password 导致会连不上
        (map (fn [{:strs [ip port]}]
               {:host ip
                :port (Integer/valueOf ^String port)}))))
