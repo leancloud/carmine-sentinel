@@ -1,5 +1,6 @@
 (ns carmine-sentinel.core
   (:require [taoensso.carmine :as car]
+            [clojure.string :as cstr]
             [taoensso.carmine.commands :as cmds])
   (:import (java.io EOFException)
            (taoensso.carmine Listener)))
@@ -14,6 +15,21 @@
 (defonce ^:private event-listeners (volatile! []))
 ;; Locks for resolving spec
 (defonce ^:private locks (atom nil))
+
+(defn- parse-host-port [^String s]
+  (let [[host ^String port] (cstr/split s #":")
+        [pass tail] (cstr/split host #"@")
+        [pass host] (if tail
+                      [pass tail]
+                      [nil host])]
+    (merge {:host host
+            :port (Integer/valueOf port)}
+           (when pass
+             {:password pass}))))
+
+(defn parse-specs [^String line]
+  (->> (cstr/split line #", *")
+       (map parse-host-port)))
 
 (defn- get-lock [sg mn]
   (if-let [lock (get @locks (str sg "/" mn))]
