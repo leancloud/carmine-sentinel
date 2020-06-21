@@ -167,15 +167,16 @@
 
       (not-empty all-specs))))
 
-(defn- try-resolve-master-spec [specs sentinel-group master-name]
+(defn- try-resolve-master-spec [server-conn specs sentinel-group master-name]
   (let [sentinel-spec (first specs)]
     (try
       (when-let [[master slaves]
                  (car/wcar {:spec sentinel-spec} :as-pipeline
                            (sentinel-get-master-addr-by-name master-name)
                            (sentinel-slaves master-name))]
-        (let [master-spec {:host (first master)
-                           :port (Integer/valueOf ^String (second master))}
+        (let [master-spec (merge (:spec server-conn)
+                                 {:host (first master)
+                                  :port (Integer/valueOf ^String (second master))})
               slaves (pick-specs-from-sentinel-raw-states slaves)]
           (make-sure-master-role master-spec)
           (swap! sentinel-resolved-specs assoc-in [sentinel-group master-name]
@@ -216,7 +217,7 @@
            tried-specs []]
       (if (seq specs)
         (if-let [[master-spec slaves]
-                 (try-resolve-master-spec specs sentinel-group master-name)]
+                 (try-resolve-master-spec server-conn specs sentinel-group master-name)]
           (do
             ;;Move the sentinel instance to the first position of sentinel list
             ;;to speedup next time resolving.
