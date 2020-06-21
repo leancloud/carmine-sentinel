@@ -189,12 +189,31 @@ At last, carmine-sentinel will refresh the sentinel instance list by the respons
 
 ## Testing
 
-Running the Makefile tests requires having `make`, `lein` and a Linux or MacOS machine.
-The test scenario in the is comprised of three sentinels and one master.
+We use docker-compose to facilitate testing and development. But due
+to sentinel auto-discovery is not friendly to docker, we have to use
+external ip (such as 192.68.1.x) instead of loopback interface
+(127.0.0.1) to setup the redis ip.
 
-To run the tests simply run in shell:
-```shell
-make test
+First, setup the env for docker setup:
+
+```sh
+> cat env.sh
+export HOST_IP=$(ipconfig getifaddr en0)
+export SENTINEL_SPECS="foobar@$HOST_IP:5000,foobar@$HOST_IP:5001,foobar@$HOST_IP:5002"
+export REDIS_SPECS="foobar@$HOST_IP:6379,foobar@$HOST_IP:6380"
+> source env.sh
+```
+
+Then, bring up redis cluster by docker-compose:
+
+```sh
+docker-compose up -d
+```
+
+At last, run test:
+
+```sh
+lein test
 ```
 
 ## License

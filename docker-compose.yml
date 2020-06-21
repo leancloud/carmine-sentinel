@@ -1,0 +1,65 @@
+version: '2'
+
+volumes:
+    data: {}
+
+networks: {}
+
+services:
+    redis:
+      image: redis:6.0-alpine
+      ports:
+        - "6379:6379"
+      command:
+        - redis-server
+        - --requirepass foobar
+        - --masterauth foobar
+
+    redis1:
+      image: redis:6.0-alpine
+      ports:
+        - "6380:6379"
+      command:
+        - redis-server
+        - --requirepass foobar
+        - --masterauth foobar
+        - --slaveof ${HOST_IP} 6379
+        - --slave-announce-ip ${HOST_IP}
+        - --slave-announce-port 6380
+
+    sentinel:
+      build: ./sentinel
+      # export HOST_IP=$(ipconfig getifaddr en0)
+      environment:
+        - "MASTER_NAME=mymaster"
+        - "MASTER_PASS=foobar"
+        - "HOST_IP=${HOST_IP}"
+      ports:
+        - "5000:5000"
+      command:
+        - --requirepass foobar
+        - --port 5000
+
+    sentinel1:
+      build: ./sentinel
+      environment:
+        - "MASTER_NAME=mymaster"
+        - "MASTER_PASS=foobar"
+        - "HOST_IP=${HOST_IP}"
+      ports:
+        - "5001:5000"
+      command:
+        - --requirepass foobar
+        - --port 5000
+
+    sentinel2:
+      build: ./sentinel
+      environment:
+        - "MASTER_NAME=mymaster"
+        - "MASTER_PASS=foobar"
+        - "HOST_IP=${HOST_IP}"
+      ports:
+        - "5002:5000"
+      command:
+        - --requirepass foobar
+        - --port 5000
