@@ -161,13 +161,18 @@
 
 (defn- subscribe-all-sentinels [sentinel-group master-name]
   (when-let [old-sentinel-specs (not-empty (get-in @sentinel-groups [sentinel-group :specs]))]
-    (let [valid-specs (->> old-sentinel-specs
-                           (mapv #(try (-> (car/wcar {:spec %}
-                                                     (sentinel-sentinels master-name))
-                                           (pick-specs-from-sentinel-raw-states)
-                                           (conj %))
-                                       (catch Exception _
-                                         [])))
+    (let [get-sentinels (fn [spec]
+                          (when-let [raw-sentinels (try
+                                                     (car/wcar {:spec spec}
+                                                               (sentinel-sentinels master-name))
+                                                     (catch Exception _
+                                                       nil))]
+                            (conj (->> raw-sentinels
+                                       (pick-specs-from-sentinel-raw-states)
+                                       ;; merge :password from old spec if present
+                                       (map (partial merge spec))))))
+          valid-specs (->> old-sentinel-specs
+                           (mapv get-sentinels)
                            (flatten)
                            ;; remove duplicate sentinel spec
                            (set))
@@ -193,7 +198,9 @@
         (let [master-spec (merge (:spec server-conn)
                                  {:host (first master)
                                   :port (Integer/valueOf ^String (second master))})
-              slaves (pick-specs-from-sentinel-raw-states slaves)]
+              slaves (->> slaves
+                          pick-specs-from-sentinel-raw-states
+                          (map (partial merge (:spec server-conn))))]
           (make-sure-master-role master-spec)
           (swap! sentinel-resolved-specs assoc-in [sentinel-group master-name]
                  {:master master-spec

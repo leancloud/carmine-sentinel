@@ -35,10 +35,13 @@
 
 (def sentinel-master "mymaster")
 (def sentinel-group :group1)
-(def redis-master-spec
-  (->> (get-env "REDIS_MASTER_SPEC" "127.0.0.1:6379")
-       parse-specs
-       first))
+(def redis-specs
+  (->> (get-env "REDIS_SPECS" "127.0.0.1:6379")
+       parse-specs))
+;; assuming the first is master
+(def redis-master-spec (first redis-specs))
+(def redis-slave-specs (rest redis-specs))
+
 (def sentinel-specs
   (->> (get-env "SENTINEL_SPECS" "127.0.0.1:5000")
        parse-specs))
@@ -56,7 +59,7 @@
 (deftest resolve-master-spec
   (testing "Try to resolve the master's spec using the sentinels' specs"
     (is (=
-         [redis-master-spec ()]
+         [redis-master-spec redis-slave-specs]
          (let [server-conn     {:pool {},
                                 :spec (dissoc redis-master-spec :host :port),
                                 :sentinel-group :group1,
