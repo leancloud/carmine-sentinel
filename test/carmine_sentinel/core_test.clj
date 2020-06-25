@@ -26,69 +26,72 @@
 ;;; requirepass "foobar"
 
 
-(def token "foobar")
-(def host "127.0.0.1")
-(def conn {:pool {}
-           :spec {:password token}
-           :sentinel-group :group1
-           :master-name "mymaster"})
+(defn- get-env
+  ([k]
+   (get-env k nil))
+  ([k default]
+   (or (System/getenv k)
+       default)))
+
+(def sentinel-master "mymaster")
+(def sentinel-group :group1)
+(def redis-specs
+  (->> (get-env "REDIS_SPECS" "127.0.0.1:6379")
+       parse-specs))
+;; assuming the first is master
+(def redis-master-spec (first redis-specs))
+(def redis-slave-specs (rest redis-specs))
+
+(def sentinel-specs
+  (->> (get-env "SENTINEL_SPECS" "127.0.0.1:5000")
+       parse-specs))
+(def server-conn
+  {:pool {}
+   :spec (dissoc redis-master-spec :host :port)
+   :sentinel-group sentinel-group
+   :master-name sentinel-master})
 
 (set-sentinel-groups!
- {:group1
-  {:specs [{:host host :port 5000 :password token}
-           {:host host :port 5001 :password token}
-           {:host host :port 5002 :password token}]}})
+ {sentinel-group
+  {:specs sentinel-specs}})
 
 
 (deftest resolve-master-spec
   (testing "Try to resolve the master's spec using the sentinels' specs"
     (is (=
-         [{:password "foobar", :host "127.0.0.1", :port 6379} ()]
+         [redis-master-spec redis-slave-specs]
          (let [server-conn     {:pool {},
-                                :spec {:password "foobar"},
+                                :spec (dissoc redis-master-spec :host :port),
                                 :sentinel-group :group1,
-                                :master-name "mymaster"}
-               specs           [{:host "127.0.0.1", :port 5002, :password "foobar"}
-                                {:host "127.0.0.1", :port 5001, :password "foobar"}
-                                {:host "127.0.0.1", :port 5000, :password "foobar"}]
-               sentinel-group :group1
-               master-name    "mymaster"]
+                                :master-name sentinel-master}
+               specs           sentinel-specs]
            (@#'carmine-sentinel.core/try-resolve-master-spec
-            server-conn specs sentinel-group master-name))))))
+            server-conn specs sentinel-group sentinel-master))))))
 
 (deftest subscribing-all-sentinels
   (testing "Check if sentinels are subscribed to correctly"
-    (is (=
-         [{:password "foobar", :port 5002, :host "127.0.0.1"}
-          {:password "foobar", :port 5001, :host "127.0.0.1"}
-          {:password "foobar", :port 5000, :host "127.0.0.1"}]
-         (let [sentinel-group :group1
-               master-name "mymaster"
-               server-conn conn]
+    (is (= sentinel-specs
            (@#'carmine-sentinel.core/subscribe-all-sentinels
             sentinel-group
-            master-name))))))
+            sentinel-master)))))
 
 (deftest asking-sentinel-master
   (testing "Testing if master is found through sentinel"
-    (is (= {:password "foobar", :host "127.0.0.1", :port 6379}
-           (let [sentinel-group :group1
-                 master-name "mymaster"
-                 server-conn conn]
-             (@#'carmine-sentinel.core/ask-sentinel-master sentinel-group
-              master-name
-              server-conn))))))
+    (is (= redis-master-spec
+           (@#'carmine-sentinel.core/ask-sentinel-master
+            sentinel-group
+            sentinel-master
+            server-conn)))))
 
 (deftest sentinel-redis-spec
   (testing "Trying to get redis spec by sentinel-group and master name"
-    (is (= {:password "foobar", :host "127.0.0.1", :port 6379}
-           (let [server-conn conn]
-             (get-sentinel-redis-spec (:sentinel-group server-conn)
-                                      (:master-name server-conn)
-                                      server-conn))))))
+    (is (= redis-master-spec
+           (get-sentinel-redis-spec (:sentinel-group server-conn)
+                                    (:master-name server-conn)
+                                    server-conn)))))
 
 (try
-  (defmacro test-wcar* [& body] `(wcar conn ~@body))
+  (defmacro test-wcar* [& body] `(wcar server-conn ~@body))
   (catch Exception e
     (println "WARNING: caught exception while defining wcar*,"
              "can occur when re-running tests in the same repl."

@@ -1,5 +1,6 @@
 (ns carmine-sentinel.core
   (:require [taoensso.carmine :as car]
+            [clojure.string :as cstr]
             [taoensso.carmine.commands :as cmds])
   (:import (java.io EOFException)
            (taoensso.carmine Listener)))
@@ -14,6 +15,21 @@
 (defonce ^:private event-listeners (volatile! []))
 ;; Locks for resolving spec
 (defonce ^:private locks (atom nil))
+
+(defn- parse-host-port [^String s]
+  (let [[host ^String port] (cstr/split s #":")
+        [pass tail] (cstr/split host #"@")
+        [pass host] (if tail
+                      [pass tail]
+                      [nil host])]
+    (merge {:host host
+            :port (Integer/valueOf port)}
+           (when pass
+             {:password pass}))))
+
+(defn parse-specs [^String line]
+  (->> (cstr/split line #", *")
+       (map parse-host-port)))
 
 (defn- get-lock [sg mn]
   (if-let [lock (get @locks (str sg "/" mn))]
@@ -145,13 +161,18 @@
 
 (defn- subscribe-all-sentinels [sentinel-group master-name]
   (when-let [old-sentinel-specs (not-empty (get-in @sentinel-groups [sentinel-group :specs]))]
-    (let [valid-specs (->> old-sentinel-specs
-                           (mapv #(try (-> (car/wcar {:spec %}
-                                                     (sentinel-sentinels master-name))
-                                           (pick-specs-from-sentinel-raw-states)
-                                           (conj %))
-                                       (catch Exception _
-                                         [])))
+    (let [get-sentinels (fn [spec]
+                          (when-let [raw-sentinels (try
+                                                     (car/wcar {:spec spec}
+                                                               (sentinel-sentinels master-name))
+                                                     (catch Exception _
+                                                       nil))]
+                            (conj (->> raw-sentinels
+                                       (pick-specs-from-sentinel-raw-states)
+                                       ;; merge :password from old spec if present
+                                       (map (partial merge spec))))))
+          valid-specs (->> old-sentinel-specs
+                           (mapv get-sentinels)
                            (flatten)
                            ;; remove duplicate sentinel spec
                            (set))
@@ -167,16 +188,19 @@
 
       (not-empty all-specs))))
 
-(defn- try-resolve-master-spec [specs sentinel-group master-name]
+(defn- try-resolve-master-spec [server-conn specs sentinel-group master-name]
   (let [sentinel-spec (first specs)]
     (try
       (when-let [[master slaves]
                  (car/wcar {:spec sentinel-spec} :as-pipeline
                            (sentinel-get-master-addr-by-name master-name)
                            (sentinel-slaves master-name))]
-        (let [master-spec {:host (first master)
-                           :port (Integer/valueOf ^String (second master))}
-              slaves (pick-specs-from-sentinel-raw-states slaves)]
+        (let [master-spec (merge (:spec server-conn)
+                                 {:host (first master)
+                                  :port (Integer/valueOf ^String (second master))})
+              slaves (->> slaves
+                          pick-specs-from-sentinel-raw-states
+                          (map (partial merge (:spec server-conn))))]
           (make-sure-master-role master-spec)
           (swap! sentinel-resolved-specs assoc-in [sentinel-group master-name]
                  {:master master-spec
@@ -216,7 +240,7 @@
            tried-specs []]
       (if (seq specs)
         (if-let [[master-spec slaves]
-                 (try-resolve-master-spec specs sentinel-group master-name)]
+                 (try-resolve-master-spec server-conn specs sentinel-group master-name)]
           (do
             ;;Move the sentinel instance to the first position of sentinel list
             ;;to speedup next time resolving.
