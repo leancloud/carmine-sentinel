@@ -61,6 +61,11 @@
    :sentinel-group sentinel-group
    :master-name sentinel-master})
 
+(def slave-conn
+  (assoc server-conn
+         :slaves-balancer first
+         :prefer-slave? true))
+
 (set-sentinel-groups!
  {sentinel-group
   {:specs sentinel-specs}})
@@ -112,7 +117,7 @@
     (future
       (car/wcar {:pool {}
                  :spec redis-master-spec}
-                (car/redis-call [:debug "SLEEP" "5"])))
+                (car/redis-call [:debug "SLEEP" "2"])))
     (loop []
       (if-let [ret (try
                      (test-wcar* (car/ping))
@@ -126,3 +131,27 @@
                      (get sentinel-group))))
           (Thread/sleep 1000)
           (recur))))))
+
+(deftest test-slave-conn-fail-refresh
+  (testing "A failed slave cmd will trigger refreshing redis nodes"
+    (is (= "PONG" (wcar slave-conn
+                        (car/ping))))
+    (future
+      (car/wcar {:pool {}
+                 :spec (first redis-slave-specs)}
+                (car/redis-call [:debug "SLEEP" "2"])))
+    (loop []
+      (if-let [ret (try
+                     (wcar slave-conn
+                           (car/ping))
+                     (catch Exception ex
+                       nil))]
+        (is (= "PONG" ret))
+        (do
+          (is (= nil
+                 (-> @#'carmine-sentinel.core/sentinel-resolved-specs
+                     deref
+                     (get sentinel-group))))
+          (Thread/sleep 1000)
+          (recur))))))
+

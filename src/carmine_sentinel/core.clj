@@ -233,7 +233,7 @@
     (throw (IllegalStateException.
             (format "Invalid spec found for %s %s" mn master))))
   (if (and prefer-slave? (seq slaves))
-    (slaves-balancer slaves)
+    ((or slaves-balancer first) slaves)
     master))
 
 (defn- ask-sentinel-master [sentinel-group master-name
@@ -310,8 +310,6 @@
    resolving cost."
   [sentinel-group master-name
    {:keys [prefer-slave? slaves-balancer]
-    :or {prefer-slave? false
-         slaves-balancer first}
     :as server-conn}]
   {:pre [(not (nil? sentinel-group))
          (not (empty? master-name))]}
