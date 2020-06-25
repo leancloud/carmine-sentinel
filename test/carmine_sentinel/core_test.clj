@@ -65,7 +65,6 @@
  {sentinel-group
   {:specs sentinel-specs}})
 
-
 (deftest resolve-master-spec
   (testing "Try to resolve the master's spec using the sentinels' specs"
     (is (=
@@ -107,3 +106,23 @@
   (testing "Checking if ping works."
     (is (= "PONG" (test-wcar* (car/ping))))))
 
+(deftest test-conn-fail-refresh
+  (testing "A failed cmd will trigger refreshing redis nodes"
+    (is (= "PONG" (test-wcar* (car/ping))))
+    (future
+      (car/wcar {:pool {}
+                 :spec redis-master-spec}
+                (car/redis-call [:debug "SLEEP" "5"])))
+    (loop []
+      (if-let [ret (try
+                     (test-wcar* (car/ping))
+                     (catch Exception ex
+                       nil))]
+        (is (= "PONG" ret))
+        (do
+          (is (= nil
+                 (-> @#'carmine-sentinel.core/sentinel-resolved-specs
+                     deref
+                     (get sentinel-group))))
+          (Thread/sleep 1000)
+          (recur))))))
