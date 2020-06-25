@@ -38,16 +38,26 @@
 (def redis-specs
   (->> (get-env "REDIS_SPECS" "127.0.0.1:6379")
        parse-specs))
+
 ;; assuming the first is master
-(def redis-master-spec (first redis-specs))
-(def redis-slave-specs (rest redis-specs))
+(def redis-master-spec
+  (assoc (first redis-specs)
+         :timeout-ms 500))
+
+(def redis-slave-specs
+  (->> (rest redis-specs)
+       (map #(assoc % :timeout-ms 500))))
 
 (def sentinel-specs
   (->> (get-env "SENTINEL_SPECS" "127.0.0.1:5000")
        parse-specs))
+
 (def server-conn
   {:pool {}
-   :spec (dissoc redis-master-spec :host :port)
+   :spec (-> redis-master-spec
+             (dissoc :host :port)
+             ;; add timeout here so we could test failover
+             (assoc :timeout-ms 500))
    :sentinel-group sentinel-group
    :master-name sentinel-master})
 
@@ -60,13 +70,8 @@
   (testing "Try to resolve the master's spec using the sentinels' specs"
     (is (=
          [redis-master-spec redis-slave-specs]
-         (let [server-conn     {:pool {},
-                                :spec (dissoc redis-master-spec :host :port),
-                                :sentinel-group :group1,
-                                :master-name sentinel-master}
-               specs           sentinel-specs]
-           (@#'carmine-sentinel.core/try-resolve-master-spec
-            server-conn specs sentinel-group sentinel-master))))))
+         (@#'carmine-sentinel.core/try-resolve-master-spec
+          server-conn sentinel-specs sentinel-group sentinel-master)))))
 
 (deftest subscribing-all-sentinels
   (testing "Check if sentinels are subscribed to correctly"
@@ -97,7 +102,6 @@
              "can occur when re-running tests in the same repl."
              "Please verify and check if it isn't the cause of your tests' failure:"
              e)))
-
 
 (deftest ping
   (testing "Checking if ping works."
