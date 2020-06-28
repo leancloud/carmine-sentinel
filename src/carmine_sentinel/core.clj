@@ -155,13 +155,21 @@
       (swap! sentinel-listeners dissoc sentinel-spec)
       true)))
 
+(defn- flags-down? [spec]
+  (when-let [flags (or (get spec "flags")
+                       (get spec :flags))]
+    (.contains ^String flags "_down")))
+
 (defn- pick-specs-from-sentinel-raw-states
-  [raw-states]
-  (->> raw-states
-       (map (partial apply hash-map))
-       (map (fn [{:strs [ip port]}]
-              {:host ip
-               :port (Integer/valueOf ^String port)}))))
+  ([raw-states]
+   (pick-specs-from-sentinel-raw-states false raw-states))
+  ([remove-down? raw-states]
+   (cond->> raw-states
+     true         (map (partial apply hash-map))
+     remove-down? (remove flags-down?)
+     true         (map (fn [{:strs [ip port flags]}]
+                         {:host ip
+                          :port (Integer/valueOf ^String port)})))))
 
 (defn- subscribe-all-sentinels [sentinel-group master-name]
   (when-let [old-sentinel-specs (not-empty (get-in @sentinel-groups [sentinel-group :specs]))]
@@ -171,10 +179,10 @@
                                                                (sentinel-sentinels master-name))
                                                      (catch Exception _
                                                        nil))]
-                            (conj (->> raw-sentinels
-                                       (pick-specs-from-sentinel-raw-states)
-                                       ;; merge :password from old spec if present
-                                       (map (partial merge spec))))))
+                            (->> raw-sentinels
+                                 (pick-specs-from-sentinel-raw-states)
+                                 ;; merge :password from old spec if present
+                                 (map (partial merge spec)))))
           valid-specs (->> old-sentinel-specs
                            (mapv get-sentinels)
                            (flatten)
@@ -203,7 +211,7 @@
                                  {:host (first master)
                                   :port (Integer/valueOf ^String (second master))})
               slaves (->> slaves
-                          pick-specs-from-sentinel-raw-states
+                          (pick-specs-from-sentinel-raw-states true)
                           (map (partial merge (:spec server-conn))))]
           (make-sure-master-role master-spec)
           (swap! sentinel-resolved-specs assoc-in [sentinel-group master-name]
