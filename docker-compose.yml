@@ -14,6 +14,8 @@ services:
         - redis-server
         - --requirepass foobar
         - --masterauth foobar
+        - --slave-announce-ip ${HOST_IP}
+        - --slave-announce-port 6380
 
     redis1:
       image: redis:6.0-alpine

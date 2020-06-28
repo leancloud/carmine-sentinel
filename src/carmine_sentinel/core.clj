@@ -99,13 +99,17 @@
   (doseq [listener @event-listeners]
     (silently (listener event))))
 
+(defn reset-resolved-specs
+  [group master-name]
+  (swap! sentinel-resolved-specs dissoc-in [group master-name]))
+
 (defn- handle-switch-master [sg msg]
   (when (= "message" (first msg))
     (let [[master-name old-ip old-port new-ip new-port]
           (clojure.string/split (-> msg nnext first)  #" ")]
       (when master-name
         ;;remove last resolved spec
-        (swap! sentinel-resolved-specs dissoc-in [sg master-name])
+        (reset-resolved-specs sg master-name)
         (notify-event-listeners {:event "+switch-master"
                                  :old {:host old-ip
                                        :port (Integer/valueOf ^String old-port)}
@@ -213,7 +217,7 @@
                                    :slaves slaves})
           [master-spec slaves]))
       (catch Exception e
-        (swap! sentinel-resolved-specs dissoc-in [sentinel-group master-name])
+        (reset-resolved-specs sentinel-group master-name)
         (notify-event-listeners
          {:event "error"
           :sentinel-group sentinel-group
@@ -225,11 +229,11 @@
         nil))))
 
 (defn- choose-spec [mn master slaves prefer-slave? slaves-balancer]
-  (when (= :error master)
+  (when-not (:host master)
     (throw (IllegalStateException.
-            (str "Specs not found by master name: " mn))))
+            (format "Invalid spec found for %s %s" mn master))))
   (if (and prefer-slave? (seq slaves))
-    (slaves-balancer slaves)
+    ((or slaves-balancer first) slaves)
     master))
 
 (defn- ask-sentinel-master [sentinel-group master-name
@@ -250,12 +254,11 @@
           ;;Try next sentinel
           (recur (next specs)
                  (conj tried-specs (first specs))))
-        ;;Tried all sentinel instancs, we don't get any valid specs
-        ;;Set a :error mark for this situation.
+        ;; Tried all sentinel instancs, we don't get any valid specs.
+        ;; Assuming the situation is temporary, lets reset specs so
+        ;; to resolve next time in.
         (do
-          (swap! sentinel-resolved-specs assoc-in [sentinel-group master-name]
-                 {:master :error
-                  :slaves :error})
+          (reset-resolved-specs sentinel-group master-name)
           (notify-event-listeners {:event "get-master-addr-by-name"
                                    :sentinel-group sentinel-group
                                    :master-name master-name
@@ -278,9 +281,9 @@
         (let [master (:master master-specs)]
           (when (not= :error master)
             (when (master-role? master)
-              (swap! sentinel-resolved-specs dissoc-in [group-id master-name]))))
+              (reset-resolved-specs group-id master-name))))
         (catch EOFException _
-          (swap! sentinel-resolved-specs dissoc-in [group-id master-name]))))))
+          (reset-resolved-specs group-id master-name))))))
 
 (defn register-listener!
   "Register listener for switching master.
@@ -307,8 +310,6 @@
    resolving cost."
   [sentinel-group master-name
    {:keys [prefer-slave? slaves-balancer]
-    :or {prefer-slave? false
-         slaves-balancer first}
     :as server-conn}]
   {:pre [(not (nil? sentinel-group))
          (not (empty? master-name))]}
@@ -391,9 +392,17 @@
   "
   {:arglists '([conn :as-pipeline & body] [conn & body])}
   [conn & sigs]
-  `(car/wcar
-    (update-conn-spec ~conn)
-    ~@sigs))
+  `(let [master# (:master-name ~conn)
+         group#  (:sentinel-group ~conn)]
+     (try
+       (car/wcar
+        (update-conn-spec ~conn)
+        ~@sigs)
+       (catch Exception ex#
+         ;; reset specs and refresh next time in.
+         (when master#
+           (reset-resolved-specs group# master#))
+         (throw ex#)))))
 
 (defmacro with-new-pubsub-listener
   "It's the same as taoensso.carmine/with-new-pubsub-listener,

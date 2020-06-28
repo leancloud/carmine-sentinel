@@ -38,35 +38,44 @@
 (def redis-specs
   (->> (get-env "REDIS_SPECS" "127.0.0.1:6379")
        parse-specs))
+
 ;; assuming the first is master
-(def redis-master-spec (first redis-specs))
-(def redis-slave-specs (rest redis-specs))
+(def redis-master-spec
+  (assoc (first redis-specs)
+         :timeout-ms 500))
+
+(def redis-slave-specs
+  (->> (rest redis-specs)
+       (map #(assoc % :timeout-ms 500))))
 
 (def sentinel-specs
   (->> (get-env "SENTINEL_SPECS" "127.0.0.1:5000")
        parse-specs))
+
 (def server-conn
   {:pool {}
-   :spec (dissoc redis-master-spec :host :port)
+   :spec (-> redis-master-spec
+             (dissoc :host :port)
+             ;; add timeout here so we could test failover
+             (assoc :timeout-ms 500))
    :sentinel-group sentinel-group
    :master-name sentinel-master})
+
+(def slave-conn
+  (assoc server-conn
+         :slaves-balancer first
+         :prefer-slave? true))
 
 (set-sentinel-groups!
  {sentinel-group
   {:specs sentinel-specs}})
 
-
 (deftest resolve-master-spec
   (testing "Try to resolve the master's spec using the sentinels' specs"
     (is (=
          [redis-master-spec redis-slave-specs]
-         (let [server-conn     {:pool {},
-                                :spec (dissoc redis-master-spec :host :port),
-                                :sentinel-group :group1,
-                                :master-name sentinel-master}
-               specs           sentinel-specs]
-           (@#'carmine-sentinel.core/try-resolve-master-spec
-            server-conn specs sentinel-group sentinel-master))))))
+         (@#'carmine-sentinel.core/try-resolve-master-spec
+          server-conn sentinel-specs sentinel-group sentinel-master)))))
 
 (deftest subscribing-all-sentinels
   (testing "Check if sentinels are subscribed to correctly"
@@ -98,8 +107,51 @@
              "Please verify and check if it isn't the cause of your tests' failure:"
              e)))
 
-
 (deftest ping
   (testing "Checking if ping works."
     (is (= "PONG" (test-wcar* (car/ping))))))
+
+(deftest test-conn-fail-refresh
+  (testing "A failed cmd will trigger refreshing redis nodes"
+    (is (= "PONG" (test-wcar* (car/ping))))
+    (future
+      (car/wcar {:pool {}
+                 :spec redis-master-spec}
+                (car/redis-call [:debug "SLEEP" "2"])))
+    (loop []
+      (if-let [ret (try
+                     (test-wcar* (car/ping))
+                     (catch Exception ex
+                       nil))]
+        (is (= "PONG" ret))
+        (do
+          (is (= nil
+                 (-> @#'carmine-sentinel.core/sentinel-resolved-specs
+                     deref
+                     (get sentinel-group))))
+          (Thread/sleep 1000)
+          (recur))))))
+
+(deftest test-slave-conn-fail-refresh
+  (testing "A failed slave cmd will trigger refreshing redis nodes"
+    (is (= "PONG" (wcar slave-conn
+                        (car/ping))))
+    (future
+      (car/wcar {:pool {}
+                 :spec (first redis-slave-specs)}
+                (car/redis-call [:debug "SLEEP" "2"])))
+    (loop []
+      (if-let [ret (try
+                     (wcar slave-conn
+                           (car/ping))
+                     (catch Exception ex
+                       nil))]
+        (is (= "PONG" ret))
+        (do
+          (is (= nil
+                 (-> @#'carmine-sentinel.core/sentinel-resolved-specs
+                     deref
+                     (get sentinel-group))))
+          (Thread/sleep 1000)
+          (recur))))))
 
