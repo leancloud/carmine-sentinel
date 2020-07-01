@@ -1,14 +1,8 @@
 # Change Log
 
-## [0.3.0] - 2019-02-27
-### Compatibility Breaking Change
-- Change defined sentinel commands format to be compatible with `carmine` version post `2.14`: will only work for `2.15`+ !
+## 0.2.0 - 2020-07-01
 
-### Fixed
-- carmine server connection settings are no longer lost: password connection works!
+* Refresh redis spec from sentinel if a conn fails
+* Remove slaves that marked as down when resolve redis spec
+* Fix sentinel connection auth
 
-### Changed
-- Expanded hard to read use of macros
-- Change variable names from acronyms to full words from acronyms
-- `try-resolve-master-spec` now accepts `server-conn` argument
-- `get-sentinel-redis-spec` now checks arguments using `:pre` not `if ... throw`
