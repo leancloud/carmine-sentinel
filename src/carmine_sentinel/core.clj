@@ -381,15 +381,15 @@
 (defn update-conn-spec
   "Cast a carmine-sentinel conn to carmine raw conn spec.
    It will resolve master from sentinel first time,then cache the result in
-   memory for reusing."
+   memory for reusing.
+   If pass sentinel-group and master-name, host and port in passed-in spec will be ignored."
   [server-conn]
   (if (and (:sentinel-group server-conn) (:master-name server-conn))
-    (update server-conn
-            :spec
-            merge
-            (get-sentinel-redis-spec (:sentinel-group server-conn)
-                                     (:master-name server-conn)
-                                     server-conn))
+    (let [server-conn   (update server-conn :spec dissoc :host :port)
+          resolved-spec (get-sentinel-redis-spec (:sentinel-group server-conn)
+                                                 (:master-name server-conn)
+                                                 server-conn)]
+      (update server-conn :spec #(merge resolved-spec %)))
     server-conn))
 
 (defmacro wcar
@@ -397,6 +397,7 @@
       :master-name \"mymaster\"
       :sentinel-group :default
    in conn for redis sentinel cluster.
+   If pass sentinel-group and master-name, host and port in passed-in spec will be ignored.
   "
   {:arglists '([conn :as-pipeline & body] [conn & body])}
   [conn & sigs]

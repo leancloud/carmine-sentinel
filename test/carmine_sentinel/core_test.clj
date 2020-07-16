@@ -155,3 +155,35 @@
           (Thread/sleep 1000)
           (recur))))))
 
+(deftest test-update-conn-spec
+  (let [server-password (-> server-conn :spec :password)
+        sentinel-group  (:sentinel-group server-conn)
+        master-name     (:master-name server-conn)
+        check-fn        (fn [{old-spec :spec :as old-conn}
+                             {new-spec :spec :as new-conn}]
+                          (is (string? (:host new-spec)))
+                          (is (number? (:port new-spec)))
+                          (is (= (:db old-spec) (:db new-spec)))
+                          (is (= (:password old-spec) (:password new-spec)))
+                          (is (= (:sentinel-group old-conn) (:sentinel-group new-conn)))
+                          (is (= (:master-name old-conn) (:master-name new-conn))))]
+    (testing "Pass password in spec"
+      (reset-resolved-specs sentinel-group master-name)
+
+      (let [old-conn (assoc server-conn :spec {:password server-password})
+            new-conn (update-conn-spec old-conn)]
+        (check-fn old-conn new-conn)))
+    (testing "Pass db in spec"
+      (reset-resolved-specs sentinel-group master-name)
+
+      (let [old-conn (assoc server-conn :spec {:password server-password :db 0})
+            new-conn (update-conn-spec old-conn)]
+        (check-fn old-conn new-conn))
+
+      (let [old-conn (assoc server-conn :spec {:password server-password :db 1})
+            new-conn (update-conn-spec old-conn)]
+        (check-fn old-conn new-conn))
+
+      (let [old-conn (assoc server-conn :spec {:password server-password :db 2})
+            new-conn (update-conn-spec old-conn)]
+        (check-fn old-conn new-conn)))))
