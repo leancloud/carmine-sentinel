@@ -287,8 +287,8 @@
     (doseq [[master-name master-specs] resolved-specs]
       (try
         (let [master (:master master-specs)]
-          (when (not= :error master)
-            (when (master-role? master)
+          (when-not (= :error master)
+            (when-not (master-role? master)
               (reset-resolved-specs group-id master-name))))
         (catch EOFException _
           (reset-resolved-specs group-id master-name))))))
