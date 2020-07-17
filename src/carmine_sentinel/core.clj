@@ -44,7 +44,7 @@
   `(locking (get-lock ~sg ~mn)
      ~@body))
 
-;;define commands for sentinel
+;; define commands for sentinel
 (cmds/defcommand "SENTINEL get-master-addr-by-name"
   {:fn-name         "sentinel-get-master-addr-by-name"
    :fn-params-fixed [name]
@@ -108,7 +108,7 @@
     (let [[master-name old-ip old-port new-ip new-port]
           (clojure.string/split (-> msg nnext first)  #" ")]
       (when master-name
-        ;;remove last resolved spec
+        ;; remove last resolved spec
         (reset-resolved-specs sg master-name)
         (notify-event-listeners {:event "+switch-master"
                                  :old {:host old-ip
@@ -232,7 +232,7 @@
           :master-name master-name
           :sentinel-spec sentinel-spec
           :exception e})
-        ;;Close the listener
+        ;; Close the listener
         (unsubscribe-switch-master! sentinel-spec)
         nil))))
 
@@ -254,12 +254,12 @@
         (if-let [[master-spec slaves]
                  (try-resolve-master-spec server-conn specs sentinel-group master-name)]
           (do
-            ;;Move the sentinel instance to the first position of sentinel list
-            ;;to speedup next time resolving.
+            ;; Move the sentinel instance to the first position of sentinel list
+            ;; to speedup next time resolving.
             (vswap! sentinel-groups assoc-in [sentinel-group :specs]
                     (vec (concat specs tried-specs)))
             (choose-spec master-name master-spec slaves prefer-slave? slaves-balancer))
-          ;;Try next sentinel
+          ;; Try next sentinel
           (recur (next specs)
                  (conj tried-specs (first specs))))
         ;; Tried all sentinel instancs, we don't get any valid specs.
@@ -277,7 +277,7 @@
     (throw (IllegalStateException.
             (str "Missing specs for sentinel group: " sentinel-group)))))
 
-;;APIs
+;; APIs
 (defn remove-invalid-resolved-master-specs!
   "Iterate all the resolved master specs and remove any invalid
    master spec found by checking role on redis.
@@ -287,8 +287,8 @@
     (doseq [[master-name master-specs] resolved-specs]
       (try
         (let [master (:master master-specs)]
-          (when (not= :error master)
-            (when (master-role? master)
+          (when-not (= :error master)
+            (when-not (master-role? master)
               (reset-resolved-specs group-id master-name))))
         (catch EOFException _
           (reset-resolved-specs group-id master-name))))))
@@ -330,9 +330,9 @@
       s
       (throw (IllegalStateException.
               (str "Spec not found: " sentinel-group "/" master-name ", " server-conn))))
-    ;;Synchronized on [sentinel-group master-name] lock
+    ;; Synchronized on [sentinel-group master-name] lock
     (sync-on sentinel-group master-name
-             ;;Double checking
+             ;; Double checking
              (if (nil? (get-in @sentinel-resolved-specs [sentinel-group master-name]))
                (ask-sentinel-master sentinel-group master-name server-conn)
                (get-sentinel-redis-spec sentinel-group master-name server-conn)))))
