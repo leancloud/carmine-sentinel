@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.2.2 - 2020-07-17
+
+* Fix accidentally removed valid specs.
+
 ## 0.2.1 - 2020-07-16
 
 * Support connect to multiple db
